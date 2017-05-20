@@ -1,0 +1,124 @@
+# NDJSON speed contest
+
+We benchmark several R packages that read [ndjson](http://ndjson.org/) data into a data frame. 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(comment = "", fig.height = 6, fig.width=11.7, fig.retina = TRUE)
+options(width = 120, max.print = 100)
+library(dplyr)
+library(svglite)
+library(ggplot2)
+theme_set(theme_gray(base_size = 18))
+```
+
+![serious business](https://pbs.twimg.com/media/CO23eoaWgAAgUmv.jpg)
+
+__Important__: these packages are not fully interchangable. They have varying features and return different structures. Some support nested data, user interruption, stream-processing incremental results, etc. Anyway...
+
+## Prepare
+
+Required packages:
+
+```{r, eval=FALSE}
+install.packages(c("nycflights13", "dplyr", "ggplot2", "microbenchmark", "jsonlite", "ndjson", "corpus"))
+```
+
+We also need some test data:
+
+```{r}
+# Generate some NDJSON
+test <- tempfile()
+jsonlite::stream_out(nycflights13::flights, file(test), verbose = FALSE)
+```
+
+## Reading from disk
+
+First benchmark reading time:
+
+```{r}
+# Reading speed (takes a few minutes !!)
+read_speed <- microbenchmark::microbenchmark (
+  jsonlite = flights1 <- jsonlite::stream_in(file(test), verbose = FALSE),
+  ndjson = flights2 <- ndjson::stream_in(test),
+  corpus = flights3 <- corpus::read_ndjson(test),
+  "corpus(mmap)" = flights4 <- corpus::read_ndjson(test, mmap = TRUE),
+  times = 3
+)
+print(read_speed)
+read_data <- summary(read_speed)
+
+# Plot
+library(ggplot2)
+ggplot(read_data, aes(x = expr, fill = expr, y = median, ymin = min, ymax = max)) + 
+  geom_bar(color = "white", stat = "identity") + geom_errorbar() +
+  xlab("") + ylab("Read time (less is better)")
+```
+
+## Working example 1
+
+Now benchmark how long it takes to perform operations on the data returned by the readers. 
+We use an example from the [dplyr vignette](https://cran.rstudio.com/web/packages/dplyr/vignettes/introduction.html) to benchmark some random operations on the `flights` dataset.
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+```
+
+```{r, message=FALSE}
+# Test data manipulation
+work_function <- function(fldata){
+  fldata %>%
+  group_by(year, month, day) %>%
+  select(arr_delay, dep_delay) %>%
+  summarise(
+    arr = mean(arr_delay, na.rm = TRUE),
+    dep = mean(dep_delay, na.rm = TRUE)
+  ) %>%
+  filter(arr > 30 | dep > 30)
+}
+
+# Run benchmark timers
+results <- microbenchmark::microbenchmark (
+  jsonlite = work_function(flights1),
+  ndjson = work_function(flights2),
+  corpus = work_function(flights3),
+  "corpus(mmap)" = work_function(flights4),
+  times = 100
+)
+
+# Present results
+print(results)
+work_data <- summary(results)
+ggplot(work_data, aes(x = expr, fill = expr, y = median, ymin = lq, ymax = uq)) + 
+  geom_bar(color = "white", stat = "identity") + geom_errorbar() +
+  xlab("") + ylab("Manipulation time 1 (less is better)")
+```
+
+## Working example 2
+
+Let's try another example function that also involves strings `tailnum`:
+
+```{r, message=FALSE}
+work_function <- function(fldata){
+  by_tailnum <- group_by(fldata, as.character(tailnum))
+  delay <- summarise(by_tailnum,
+    count = n(),
+    dist = mean(distance, na.rm = TRUE),
+    delay = mean(arr_delay, na.rm = TRUE))
+  filter(delay, count > 20, dist < 2000)  
+}
+# Run benchmark timers
+results <- microbenchmark::microbenchmark (
+  jsonlite = work_function(flights1),
+  ndjson = work_function(flights2),
+  corpus = work_function(flights3),
+  "corpus(mmap)" = work_function(flights4),
+  times = 100
+)
+
+# Present results
+print(results)
+work_data <- summary(results)
+ggplot(work_data, aes(x = expr, fill = expr, y = median, ymin = lq, ymax = uq)) + 
+  geom_bar(color = "white", stat = "identity") + geom_errorbar() +
+  xlab("") + ylab("Manipulation time 2 (less is better)")
+```
