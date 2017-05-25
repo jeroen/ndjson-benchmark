@@ -6,7 +6,6 @@ We benchmark several R packages that read [ndjson](http://ndjson.org/) data into
 knitr::opts_chunk$set(comment = "", fig.height = 6, fig.width=11.7, fig.retina = TRUE)
 options(width = 120, max.print = 100)
 library(dplyr)
-library(svglite)
 library(ggplot2)
 theme_set(theme_gray(base_size = 18))
 ```
@@ -21,6 +20,11 @@ Required packages:
 
 ```{r, eval=FALSE}
 install.packages(c("nycflights13", "dplyr", "ggplot2", "microbenchmark", "jsonlite", "ndjson", "corpus"))
+```
+
+```{r}
+options(stringsAsFactors = FALSE)
+sessionInfo()
 ```
 
 We also need some test data:
@@ -99,7 +103,7 @@ Let's try another example function that also involves strings `tailnum`:
 
 ```{r, message=FALSE}
 work_function <- function(fldata){
-  by_tailnum <- group_by(fldata, as.character(tailnum))
+  by_tailnum <- group_by(fldata, tailnum)
   delay <- summarise(by_tailnum,
     count = n(),
     dist = mean(distance, na.rm = TRUE),
